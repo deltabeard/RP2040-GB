@@ -8,10 +8,10 @@ project(RP2040_GBS C CXX)
 # Initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-add_executable(RP2040_GBS src/main.c)
+add_executable(RP2040_GBS src/main.c src/hello-world.c)
 target_include_directories(RP2040_GBS PRIVATE inc)
 target_link_libraries(RP2040_GBS
-        pico_stdlib pico_stdio pico_bootrom pico_multicore
+        pico_stdlib pico_stdio pico_bootrom pico_multicore pico_stdio
         hardware_clocks hardware_pio hardware_vreg hardware_pio
         hardware_sync hardware_pll hardware_spi hardware_irq
         pico_binary_info)
@@ -22,11 +22,11 @@ target_compile_definitions(RP2040_GBS PRIVATE
         PICO_STDIO_DEFAULT_CRLF=0
         PICO_PRINTF_SUPPORT_FLOAT=0
         PICO_PRINTF_SUPPORT_EXPONENTIAL=0
-        PICO_PRINTF_SUPPORT_LONG_LONG=0
+        PICO_PRINTF_SUPPORT_LONG_LONG=1
         PICO_PRINTF_SUPPORT_PTRDIFF_T=0)
 
-#pico_set_binary_type(manager copy_to_ram)
-#pico_set_binary_type(manager no_flash)
+pico_set_binary_type(RP2040_GBS copy_to_ram)
+#pico_set_binary_type(RP2040_GBS no_flash)
 pico_enable_stdio_usb(RP2040_GBS 1)
 pico_enable_stdio_uart(RP2040_GBS 0)
 pico_add_bin_output(RP2040_GBS)

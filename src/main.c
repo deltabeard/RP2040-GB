@@ -6,17 +6,21 @@
 
 /* RP2040 Headers */
 #include <hardware/sync.h>
+#include <pico/stdio.h>
+#include <hardware/timer.h>
+#include <hardware/vreg.h>
+#include <pico/stdlib.h>
 
 /* Project headers */
 #include "hedley.h"
 #include "peanut_gb.h"
 
-static unsigned char rom[32768] = { 0 };
+extern const unsigned char hello_world_gb[];
 
 struct priv_t
 {
     /* Pointer to allocated memory holding GB file. */
-    uint8_t *rom;
+    const uint8_t *rom;
     /* Pointer to allocated memory holding save file. */
     uint8_t *cart_ram;
 };
@@ -26,8 +30,8 @@ struct priv_t
  */
 uint8_t gb_rom_read(struct gb_s *gb, const uint_fast32_t addr)
 {
-	const struct priv_t * const p = gb->direct.priv;
-	return p->rom[addr];
+	//const struct priv_t * const p = gb->direct.priv;
+	return hello_world_gb[addr];
 }
 
 /**
@@ -35,8 +39,9 @@ uint8_t gb_rom_read(struct gb_s *gb, const uint_fast32_t addr)
  */
 uint8_t gb_cart_ram_read(struct gb_s *gb, const uint_fast32_t addr)
 {
-	const struct priv_t * const p = gb->direct.priv;
-	return p->cart_ram[addr];
+	return 0xFF;
+	//const struct priv_t * const p = gb->direct.priv;
+	//return p->cart_ram[addr];
 }
 
 /**
@@ -45,8 +50,9 @@ uint8_t gb_cart_ram_read(struct gb_s *gb, const uint_fast32_t addr)
 void gb_cart_ram_write(struct gb_s *gb, const uint_fast32_t addr,
 		       const uint8_t val)
 {
-	const struct priv_t * const p = gb->direct.priv;
-	p->cart_ram[addr] = val;
+	return;
+	//const struct priv_t * const p = gb->direct.priv;
+	//p->cart_ram[addr] = val;
 }
 
 /**
@@ -73,7 +79,8 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 void gb_serial_tx(struct gb_s *gb, const uint8_t tx)
 {
 	(void) gb;
-	printf("0x%02X ", tx);
+	putchar_raw(tx);
+	//printf("0x%02X ", tx);
 }
 
 enum gb_serial_rx_ret_e gb_serial_rx(struct gb_s *gb, uint8_t *rx)
@@ -86,14 +93,27 @@ enum gb_serial_rx_ret_e gb_serial_rx(struct gb_s *gb, uint8_t *rx)
 int main(void)
 {
 	static struct gb_s gb;
-	static struct priv_t priv = { .rom = rom, .cart_ram = NULL };
 	enum gb_init_error_e ret;
 
-	puts("Hello World!");
+	{
+		/* The value for VCO set here is meant for least power
+		 * consumption. */
+		const unsigned vco = 532000000; /* 266MHz/133MHz */
+		const unsigned div1 = 2, div2 = 1;
+
+		vreg_set_voltage(VREG_VOLTAGE_1_15);
+		sleep_ms(2);
+		set_sys_clock_pll(vco, div1, div2);
+		sleep_ms(2);
+	}
+
+	stdio_init_all();
+	(void)getchar();
+	puts("Starting");
 
 	/* Initialise context. */
 	ret = gb_init(&gb, &gb_rom_read, &gb_cart_ram_read,
-		      &gb_cart_ram_write, &gb_error, &priv);
+		      &gb_cart_ram_write, &gb_error, NULL);
 
 	if(ret != GB_INIT_NO_ERROR)
 	{
