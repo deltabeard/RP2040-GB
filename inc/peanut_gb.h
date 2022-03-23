@@ -490,6 +490,8 @@ struct gb_s
 			uint8_t joypad;
 		};
 
+		unsigned ended : 1;
+
 		/* Implementation defined data. Set to NULL if not required. */
 		void *priv;
 	} direct;
@@ -2200,6 +2202,11 @@ void __gb_step_cpu(struct gb_s *gb)
 	case 0x76: /* HALT */
 		/* TODO: Emulate HALT bug? */
 		gb->gb_halt = 1;
+		if(gb->gb_reg.IE == 0)
+		{
+			gb->direct.ended = 1;
+			return;
+		}
 		break;
 
 	case 0x77: /* LD (HL), A */
@@ -3636,6 +3643,7 @@ void gb_reset(struct gb_s *gb)
 	gb->gb_reg.IE        = 0x00;
 
 	gb->direct.joypad = 0xFF;
+	gb->direct.ended = 0;
 	gb->gb_reg.P1 = 0xCF;
 
 	memset(gb->vram, 0x00, VRAM_SIZE);

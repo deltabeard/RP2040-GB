@@ -128,11 +128,24 @@ int main(void)
 
 	gb_init_serial(&gb, gb_serial_tx, gb_serial_rx);
 
-	while(1)
-		gb_run_frame(&gb);
+	uint_fast32_t instrs = 0;
+	uint64_t start_time = time_us_64();
+	uint64_t end_time;
+	while(!gb.direct.ended)
+	{
+		__gb_step_cpu(&gb);
+		instrs++;
+	}
+
+	end_time = time_us_64();
+
+	puts("\nEmulation Ended");
+	printf("Instructions: %u\n"
+	       "Time: %llu us\n", instrs, end_time-start_time);
 
 	/* Sleep forever. */
 sleep:
+	stdio_flush();
 	while(1)
 		__wfi();
 
