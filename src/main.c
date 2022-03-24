@@ -1,6 +1,16 @@
 #define ENABLE_LCD 0
 #define ENABLE_SOUND 0
 
+/**
+ * Reducing VSYNC calculation to lower multiple.
+ * When setting a clock IRQ to DMG_CLOCK_FREQ_REDUCED, count to
+ * SCREEN_REFRESH_CYCLES_REDUCED to obtain the time required each VSYNC.
+ * DMG_CLOCK_FREQ_REDUCED = 2^18, and SCREEN_REFRESH_CYCLES_REDUCED = 4389.
+ */
+#define VSYNC_REDUCTION_FACTOR 16u
+#define SCREEN_REFRESH_CYCLES_REDUCED (SCREEN_REFRESH_CYCLES/VSYNC_REDUCTION_FACTOR)
+#define DMG_CLOCK_FREQ_REDUCED (DMG_CLOCK_FREQ/VSYNC_REDUCTION_FACTOR)
+
 /* C Headers */
 #include <stdio.h>
 
