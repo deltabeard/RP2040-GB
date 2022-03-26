@@ -1,3 +1,3 @@
-# RP2040_GBS
+# RP2040_GB
 
-Game Boy Sound (GBS) player for the Raspberry Pi RP2040 microcontroller. 
+Game Boy (DMG) emulator on the Raspberry Pi RP2040 microcontroller.
