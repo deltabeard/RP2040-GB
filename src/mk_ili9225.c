@@ -68,7 +68,7 @@
  *		decrement (0).
  * W (0xXX1X): ID0: Control vertical address counter increment (1) or
  *		decrement (0).
- * W (0xXXX8): AM: GRAM update direction. "0" is horizontal.
+ * W (0xXXX8): AM: GRAM update direction. "1" is horizontal.
  */
 #define MK_ILI9225_REG_ENTRY_MODE		0x03
 /**
@@ -391,8 +391,7 @@ unsigned mk_ili9225_init(void)
 			 * Increment vertical and horizontal address.
 			 * Use vertical image.
 			 * FIXME: Why is BGR enabled? */
-			/* TODO: Change to horizontal mode. */
-			{ MK_ILI9225_REG_ENTRY_MODE,		0x1000 },
+			{ MK_ILI9225_REG_ENTRY_MODE,		0x0008 },
 			/* Turn off all display outputs. */
 			{ MK_ILI9225_REG_DISPLAY_CTRL,		0x0000 },
 			/* Set porches to 8 lines. */
@@ -491,6 +490,11 @@ void mk_ili9225_set_window(uint16_t hor_start, uint16_t hor_end,
 	set_register(MK_ILI9225_REG_HORI_WIN_ADDR2, hor_start);
 	set_register(MK_ILI9225_REG_VERT_WIN_ADDR1, vert_end);
 	set_register(MK_ILI9225_REG_VERT_WIN_ADDR2, vert_start);
+}
+
+void mk_ili9225_set_x(uint8_t x)
+{
+	set_register(MK_ILI9225_REG_RAM_ADDR_SET1, x);
 }
 
 void mk_ili9225_set_address(uint8_t x, uint8_t y)

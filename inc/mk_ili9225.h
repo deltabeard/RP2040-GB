@@ -129,6 +129,8 @@ void mk_ili9225_power_control(uint8_t drive_power, bool sleep);
 
 void mk_ili9225_set_drive_freq(uint16_t f);
 
+void mk_ili9225_set_x(uint8_t x);
+
 /**
  * Exit and stop using LCD. Currently does nothing.
  */

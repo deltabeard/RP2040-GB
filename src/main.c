@@ -148,7 +148,8 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 				[pixels_buffer[x] & 3];
 	}
 
-	mk_ili9225_set_address(0, 15 + line);
+	mk_ili9225_set_address(line + 15, 0xDB - 30);
+	//mk_ili9225_set_x(line + 15);
 #if USE_DMA
 	mk_ili9225_write_pixels_start();
 	dma_channel_transfer_from_buffer_now(dma_lcd, &fb[0], LCD_WIDTH);
@@ -193,7 +194,7 @@ void main_core1(void)
 #endif
 
 	/* Set LCD window to DMG size. */
-	mk_ili9225_set_window(15, LCD_HEIGHT+15, 29, LCD_WIDTH+29);
+	//mk_ili9225_set_window(15, LCD_HEIGHT+15, 29, LCD_WIDTH+29);
 
 	while(1)
 	{
@@ -205,7 +206,7 @@ void main_core1(void)
 			break;
 
 		case CORE_CMD_IDLE_SET:
-			mk_ili9225_display_control(false, cmd.data);
+			mk_ili9225_display_control(true, cmd.data);
 			break;
 
 		case CORE_CMD_NOP:
@@ -256,7 +257,7 @@ int main(void)
 
 	/* Initialise USB serial connection for debugging. */
 	stdio_init_all();
-	(void) getchar();
+	//(void) getchar();
 	puts_raw("Starting");
 
 	/* Initialise GPIO pins. */
@@ -313,6 +314,7 @@ int main(void)
 		} while(HEDLEY_LIKELY(gb.gb_frame == 0));
 
 		frames++;
+		gb.direct.joypad = 0xFF;
 		input = getchar_timeout_us(0);
 		if(input == PICO_ERROR_TIMEOUT)
 			continue;
@@ -365,6 +367,24 @@ int main(void)
 			stdio_flush();
 			frames = 0;
 			start_time = time_us_64();
+			break;
+		}
+
+		case '\n':
+		{
+			gb.direct.joypad_bits.start = 0;
+			break;
+		}
+
+		case 'z':
+		{
+			gb.direct.joypad_bits.a = 0;
+			break;
+		}
+
+		case 'x':
+		{
+			gb.direct.joypad_bits.b = 0;
 			break;
 		}
 
