@@ -12,6 +12,7 @@ add_executable(RP2040_GB src/main.c src/rom.c src/mk_ili9225.c)
 target_include_directories(RP2040_GB PRIVATE inc)
 target_link_libraries(RP2040_GB
         pico_stdlib pico_stdio pico_bootrom pico_multicore pico_stdio
+	pico_multicore
         hardware_clocks hardware_pio hardware_vreg hardware_pio
         hardware_sync hardware_pll hardware_spi hardware_irq hardware_dma
         pico_binary_info)
@@ -25,9 +26,17 @@ target_compile_definitions(RP2040_GB PRIVATE
         PICO_PRINTF_SUPPORT_LONG_LONG=1
         PICO_PRINTF_SUPPORT_PTRDIFF_T=0)
 
+function(pico_add_verbose_dis_output TARGET)
+	add_custom_command(TARGET ${TARGET} POST_BUILD
+		COMMAND ${CMAKE_OBJDUMP} -h $<TARGET_FILE:${TARGET}> >$<IF:$<BOOL:$<TARGET_PROPERTY:${TARGET},OUTPUT_NAME>>,$<TARGET_PROPERTY:${TARGET},OUTPUT_NAME>,$<TARGET_PROPERTY:${TARGET},NAME>>.dis
+		COMMAND ${CMAKE_OBJDUMP} -drwCSl $<TARGET_FILE:${TARGET}> >>$<IF:$<BOOL:$<TARGET_PROPERTY:${TARGET},OUTPUT_NAME>>,$<TARGET_PROPERTY:${TARGET},OUTPUT_NAME>,$<TARGET_PROPERTY:${TARGET},NAME>>.dis
+		)
+endfunction()
+
 pico_set_binary_type(RP2040_GB copy_to_ram)
 #pico_set_binary_type(RP2040_GB no_flash)
 pico_enable_stdio_usb(RP2040_GB 1)
 pico_enable_stdio_uart(RP2040_GB 0)
+pico_add_verbose_dis_output(RP2040_GB)
 pico_add_bin_output(RP2040_GB)
 pico_add_uf2_output(RP2040_GB)

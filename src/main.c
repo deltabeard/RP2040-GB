@@ -1,6 +1,6 @@
-#define ENABLE_LCD 1
-#define ENABLE_SOUND 0
-#define USE_DMA 0
+#define ENABLE_LCD	1
+#define ENABLE_SOUND	0
+#define USE_DMA		0
 
 /**
  * Reducing VSYNC calculation to lower multiple.
@@ -14,17 +14,19 @@
 
 /* C Headers */
 #include <stdio.h>
+#include <string.h>
 
 /* RP2040 Headers */
-#include <hardware/sync.h>
-#include <pico/stdio.h>
-#include <hardware/timer.h>
-#include <hardware/vreg.h>
-#include <pico/stdlib.h>
-#include <pico/bootrom.h>
-#include <hardware/spi.h>
 #include <hardware/clocks.h>
 #include <hardware/dma.h>
+#include <hardware/spi.h>
+#include <hardware/sync.h>
+#include <hardware/timer.h>
+#include <hardware/vreg.h>
+#include <pico/bootrom.h>
+#include <pico/stdio.h>
+#include <pico/stdlib.h>
+#include <pico/multicore.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -41,15 +43,7 @@
 static uint dma_lcd;
 extern const unsigned char rom[];
 static uint8_t ram[32768];
-static int shift = 0;
-
-struct priv_t
-{
-    /* Pointer to allocated memory holding GB file. */
-    const uint8_t *rom;
-    /* Pointer to allocated memory holding save file. */
-    uint8_t *cart_ram;
-};
+static int lcd_line_busy = 0;
 
 void mk_ili9225_set_rst(bool state)
 {
@@ -81,7 +75,7 @@ void mk_ili9225_delay_ms(unsigned ms)
  */
 uint8_t gb_rom_read(struct gb_s *gb, const uint_fast32_t addr)
 {
-	//const struct priv_t * const p = gb->direct.priv;
+	(void) gb;
 	return rom[addr];
 }
 
@@ -90,9 +84,8 @@ uint8_t gb_rom_read(struct gb_s *gb, const uint_fast32_t addr)
  */
 uint8_t gb_cart_ram_read(struct gb_s *gb, const uint_fast32_t addr)
 {
+	(void) gb;
 	return ram[addr];
-	//const struct priv_t * const p = gb->direct.priv;
-	//return p->cart_ram[addr];
 }
 
 /**
@@ -102,8 +95,6 @@ void gb_cart_ram_write(struct gb_s *gb, const uint_fast32_t addr,
 		       const uint8_t val)
 {
 	ram[addr] = val;
-	//const struct priv_t * const p = gb->direct.priv;
-	//p->cart_ram[addr] = val;
 }
 
 /**
@@ -127,23 +118,22 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 #endif
 }
 
-void gb_serial_tx(struct gb_s *gb, const uint8_t tx)
-{
-	(void) gb;
-	//putchar_raw(tx);
-}
+union core_cmd {
+	struct {
+#define CORE_CMD_NOP		0
+#define CORE_CMD_LCD_LINE	1
+#define CORE_CMD_IDLE_SET	2
+		uint8_t cmd;
+		uint8_t unused1;
+		uint8_t unused2;
+		uint8_t data;
+	};
+	uint32_t full;
+};
 
-enum gb_serial_rx_ret_e gb_serial_rx(struct gb_s *gb, uint8_t *rx)
+static uint8_t pixels_buffer[LCD_WIDTH];
+void core1_lcd_draw_line(const uint_fast8_t line)
 {
-	(void) gb;
-	(void) rx;
-	return GB_SERIAL_RX_NO_CONNECTION;
-}
-
-void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[160],
-		   const uint_fast8_t line)
-{
-	struct priv_t *priv = gb->direct.priv;
 	const uint16_t palette[3][4] = {
 		{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
 		{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
@@ -154,20 +144,104 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[160],
 	//dma_channel_wait_for_finish_blocking(dma_lcd);
 	for(unsigned int x = 0; x < LCD_WIDTH; x++)
 	{
-		fb[x] = palette[(pixels[x] & LCD_PALETTE_ALL) >> 4][pixels[x] & 3];
+		fb[x] = palette[(pixels_buffer[x] & LCD_PALETTE_ALL) >> 4]
+				[pixels_buffer[x] & 3];
 	}
 
 	mk_ili9225_set_address(0, 15 + line);
-	mk_ili9225_write_pixels(fb, LCD_WIDTH + shift);
-	//dma_channel_transfer_from_buffer_now(dma_lcd, &fb[0], LCD_WIDTH);
+#if USE_DMA
+	mk_ili9225_write_pixels_start();
+	dma_channel_transfer_from_buffer_now(dma_lcd, &fb[0], LCD_WIDTH);
+	dma_channel_wait_for_finish_blocking(dma_lcd);
+	mk_ili9225_write_pixels_end();
+#else
+	mk_ili9225_write_pixels(fb, LCD_WIDTH);
+	//__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
+#endif
+}
+
+void main_core1(void)
+{
+	static dma_channel_config c2;
+	static const uint16_t clear = 0x0000;
+	union core_cmd cmd;
+
+	/* Initilise and control LCD on core 1. */
+	mk_ili9225_init();
+
+#if 1
+	/* Initilise DMA transfer for clearing the LCD screen. */
+	dma_lcd = dma_claim_unused_channel(true);
+	c2 = dma_channel_get_default_config(dma_lcd);
+	channel_config_set_transfer_data_size(&c2, DMA_SIZE_16);
+	channel_config_set_dreq(&c2,DREQ_SPI0_TX);
+	channel_config_set_read_increment(&c2, false);
+	channel_config_set_write_increment(&c2, false);
+	channel_config_set_ring(&c2, false, 0);
+
+	/* Clear LCD screen. */
+	mk_ili9225_write_pixels_start();
+	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
+			      SCREEN_SIZE_X*(SCREEN_SIZE_Y+1), true);
+	/* TODO: Add sleeping wait. */
+	dma_channel_wait_for_finish_blocking(dma_lcd);
+	mk_ili9225_write_pixels_end();
+
+	/* Set DMA transfer to be the length of a DMG line. */
+	dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
+	channel_config_set_read_increment(&c2, true);
+#endif
+
+	/* Set LCD window to DMG size. */
+	mk_ili9225_set_window(15, LCD_HEIGHT+15, 29, LCD_WIDTH+29);
+
+	while(1)
+	{
+		cmd.full = multicore_fifo_pop_blocking();
+		switch(cmd.cmd)
+		{
+		case CORE_CMD_LCD_LINE:
+			core1_lcd_draw_line(cmd.data);
+			break;
+
+		case CORE_CMD_IDLE_SET:
+			mk_ili9225_display_control(false, cmd.data);
+			break;
+
+		case CORE_CMD_NOP:
+		default:
+			break;
+		}
+	}
+
+	HEDLEY_UNREACHABLE();
+}
+
+void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
+		   const uint_fast8_t line)
+{
+	union core_cmd cmd;
+
+	/* Wait until previous line is sent. */
+	//while(lcd_line_busy)
+	//	tight_loop_contents();
+
+	/* Populate command. */
+	cmd.cmd = CORE_CMD_LCD_LINE;
+	cmd.data = line;
+
+	//__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
+	//__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH / 4);
+	memcpy(pixels_buffer, pixels, LCD_WIDTH);
+	multicore_fifo_push_blocking(cmd.full);
 }
 
 int main(void)
 {
 	static struct gb_s gb;
 	enum gb_init_error_e ret;
-	static const uint16_t clear = 0x0000;
 
+	/* Overclock. */
 	{
 		/* The value for VCO set here is meant for least power
 		 * consumption. */
@@ -180,10 +254,12 @@ int main(void)
 		sleep_ms(2);
 	}
 
+	/* Initialise USB serial connection for debugging. */
 	stdio_init_all();
-	(void)getchar();
-	puts("Starting");
+	(void) getchar();
+	puts_raw("Starting");
 
+	/* Initialise GPIO pins. */
 	gpio_set_function(GPIO_CS, GPIO_FUNC_SIO);
 	gpio_set_function(GPIO_CLK, GPIO_FUNC_SPI);
 	gpio_set_function(GPIO_SDA, GPIO_FUNC_SPI);
@@ -196,40 +272,21 @@ int main(void)
 	gpio_set_slew_rate(GPIO_CLK, GPIO_SLEW_RATE_FAST);
 	gpio_set_slew_rate(GPIO_SDA, GPIO_SLEW_RATE_FAST);
 
-	puts("Initialising SPI");
+	/* Set SPI clock to use high frequency. */
 	clock_configure(clk_peri, 0,
 			CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
 			125 * 1000 * 1000, 125 * 1000 * 1000);
 	spi_init(spi0, 32*1000*1000);
-	printf("SPI baudrate = %u\n", spi_get_baudrate(spi0));
-	spi_set_format(spi0, 16,
-		       SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+	spi_set_format(spi0, 16, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
-	puts("Initialising LCD");
-	mk_ili9225_init();
-
-	dma_lcd = dma_claim_unused_channel(true);
-	dma_channel_config c2 = dma_channel_get_default_config(dma_lcd);
-	channel_config_set_transfer_data_size(&c2, DMA_SIZE_16);
-	channel_config_set_dreq(&c2,DREQ_SPI0_TX); // select SPI TX as Dreq for pacing data transfer
-	channel_config_set_read_increment(&c2, false);
-	channel_config_set_write_increment(&c2, false);
-	channel_config_set_ring(&c2, false, 0);
-
-	/* Clear LCD screen. */
-	mk_ili9225_write_pixels_start();
-	dma_channel_configure(dma_lcd,
-			      &c2,
-			      &spi_get_hw(spi0)->dr,
-			      &clear,
-			      SCREEN_SIZE_X*(SCREEN_SIZE_Y+1),
-			      true);
-	dma_channel_wait_for_finish_blocking(dma_lcd);
-	mk_ili9225_write_pixels_end();
+	/* Start Core1, which processes requests to the LCD. */
+	puts_raw("Launching Core 1");
+	multicore_launch_core1(main_core1);
 
 	/* Initialise context. */
 	ret = gb_init(&gb, &gb_rom_read, &gb_cart_ram_read,
 		      &gb_cart_ram_write, &gb_error, NULL);
+	puts_raw("GB INIT");
 
 	if(ret != GB_INIT_NO_ERROR)
 	{
@@ -237,99 +294,91 @@ int main(void)
 		goto sleep;
 	}
 
-	dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
-	channel_config_set_read_increment(&c2, true);
-
-	mk_ili9225_set_window(15, 144+15, 29, 160+29);
-
 #if ENABLE_LCD
 	gb_init_lcd(&gb, &lcd_draw_line);
 	//gb.direct.interlace = 1;
 #endif
 
-	//gb_init_serial(&gb, gb_serial_tx, gb_serial_rx);
-
-#if USE_DMA
-	mk_ili9225_write_pixels_start();
-#endif
-
 	uint_fast32_t frames = 0;
 	uint64_t start_time = time_us_64();
-	uint64_t end_time;
 	while(1)
 	{
-		int cmd;
+		int input;
 
-		__gb_step_cpu(&gb);
-		__gb_step_cpu(&gb);
-		__gb_step_cpu(&gb);
-		__gb_step_cpu(&gb);
-		__gb_step_cpu(&gb);
-		__gb_step_cpu(&gb);
-		__gb_step_cpu(&gb);
-		__gb_step_cpu(&gb);
-
-		if(gb.gb_frame == 0)
-			continue;
-
-		frames++;
 		gb.gb_frame = 0;
 
-		cmd = getchar_timeout_us(0);
-		if(cmd == PICO_ERROR_TIMEOUT)
+		do {
+			__gb_step_cpu(&gb);
+			tight_loop_contents();
+		} while(HEDLEY_LIKELY(gb.gb_frame == 0));
+
+		frames++;
+		input = getchar_timeout_us(0);
+		if(input == PICO_ERROR_TIMEOUT)
 			continue;
 
-		switch(cmd)
+		switch(input)
 		{
-#if USE_DMA == 0
-			static bool invert = false;
-			static bool sleep = false;
-			static uint8_t freq = 1;
-			static ili9225_color_mode_e colour = ILI9225_COLOR_MODE_FULL;
+#if 0
+		static bool invert = false;
+		static bool sleep = false;
+		static uint8_t freq = 1;
+		static ili9225_color_mode_e colour = ILI9225_COLOR_MODE_FULL;
 
-			case 'i':
-				invert = !invert;
-				mk_ili9225_display_control(invert, colour);
-				break;
+		case 'i':
+			invert = !invert;
+			mk_ili9225_display_control(invert, colour);
+			break;
 
-			case 'c':
-				colour = !colour;
-				mk_ili9225_display_control(invert, colour);
-				break;
-
-			case 'f':
-				freq++;
-				freq &= 0x0F;
-				mk_ili9225_set_drive_freq(freq);
-				printf("Freq %u\n", freq);
-				break;
-
-			case 'u':
-				shift++;
-				break;
-
-			case 'd':
-				shift--;
-				break;
+		case 'f':
+			freq++;
+			freq &= 0x0F;
+			mk_ili9225_set_drive_freq(freq);
+			printf("Freq %u\n", freq);
+			break;
 #endif
-			case 'q':
-				goto out;
-
-			default:
-				break;
+		case 'c':
+		{
+			union core_cmd cmd;
+			cmd.cmd = CORE_CMD_IDLE_SET;
+			cmd.data = ILI9225_COLOR_MODE_FULL;
+			multicore_fifo_push_blocking(cmd.full);
+			break;
 		}
 
-		//mk_ili9225_write_pixels_start();
+		case 'i':
+		{
+			union core_cmd cmd;
+			cmd.cmd = CORE_CMD_IDLE_SET;
+			cmd.data = ILI9225_COLOR_MODE_8COLOR;
+			multicore_fifo_push_blocking(cmd.full);
+			break;
+		}
+
+		case 'b':
+		{
+			uint64_t end_time;
+			end_time = time_us_64();
+			printf("Frames: %u\n"
+				"Time: %llu us\n",
+				frames, end_time-start_time);
+			stdio_flush();
+			frames = 0;
+			start_time = time_us_64();
+			break;
+		}
+
+		case 'q':
+			goto out;
+
+		default:
+			break;
+		}
 	}
 out:
 
-	end_time = time_us_64();
-
 	puts("\nEmulation Ended");
-	printf("Instructions: %u\n"
-	       "Time: %llu us\n", frames, end_time-start_time);
 
-	mk_ili9225_write_pixels_end();
 	mk_ili9225_set_rst(true);
 	reset_usb_boot(0, 0);
 
