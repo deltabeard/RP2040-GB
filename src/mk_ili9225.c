@@ -387,21 +387,19 @@ unsigned mk_ili9225_init(void)
 			{ MK_ILI9225_REG_DRIVER_OUTPUT_CTRL,	0x011C },
 			/* Set LCD inversion to disabled. */
 			{ MK_ILI9225_REG_LCD_AC_DRIVING_CTRL,	0x0100 },
-			/* Use BGR mode (swap blue with red).
-			 * Increment vertical and horizontal address.
-			 * Use vertical image.
-			 * FIXME: Why is BGR enabled? */
-			{ MK_ILI9225_REG_ENTRY_MODE,		0x0008 },
+			/* Increment vertical and horizontal address.
+			 * Use vertical image. */
+			{ MK_ILI9225_REG_ENTRY_MODE,		0x0018 },
 			/* Turn off all display outputs. */
 			{ MK_ILI9225_REG_DISPLAY_CTRL,		0x0000 },
 			/* Set porches to 8 lines. */
-			{ MK_ILI9225_REG_BLANK_PERIOD_CTRL,	0x0808 },
+			{ MK_ILI9225_REG_BLANK_PERIOD_CTRL,		0x0808 },
 			/* Use 1-clock delay to gate output and edge. */
-			{ MK_ILI9225_REG_FRAME_CYCLE_CTRL,	0x1100 },
+			{ MK_ILI9225_REG_FRAME_CYCLE_CTRL,		0x1100 },
 			/* Ignore RGB interface settings. */
-			{ MK_ILI9225_REG_INTERFACE_CTRL,	0x0000 },
+			{ MK_ILI9225_REG_INTERFACE_CTRL,		0x0000 },
 			/* Set oscillation frequency to 266.6 kHz. */
-			{ MK_ILI9225_REG_OSC_CTRL,		0x0701 },
+			{ MK_ILI9225_REG_OSC_CTRL,			0x0701 },
 			/* Set VCI recycling to 2 clocks. */
 			{ MK_ILI9225_REG_VCI_RECYCLING,		0x0020 },
 			/* Initialise RAM Address to 0x0 px. */
@@ -409,7 +407,7 @@ unsigned mk_ili9225_init(void)
 			{ MK_ILI9225_REG_RAM_ADDR_SET2,		0x0000 },
 
 			/* Set scanning position to full screen. */
-			{ MK_ILI9225_REG_GATE_SCAN_CTRL,	0x0000 },
+			{ MK_ILI9225_REG_GATE_SCAN_CTRL,		0x0000 },
 			/* Set end scan position to 219 + 1 px (0xDB). */
 			{ MK_ILI9225_REG_VERT_SCROLL_CTRL1,	0x00DB },
 			/* Set start scan position to 0 px. */
@@ -422,10 +420,10 @@ unsigned mk_ili9225_init(void)
 			/* Set partial screen driving start to 0 px. */
 			{ MK_ILI9225_REG_PART_DRIVING_POS2,	0x0000 },
 			/* Set window to 176 x 220 px (full screen). */
-			{ MK_ILI9225_REG_HORI_WIN_ADDR1,	0x00AF },
-			{ MK_ILI9225_REG_HORI_WIN_ADDR2,	0x0000 },
-			{ MK_ILI9225_REG_VERT_WIN_ADDR1,	0x00DB },
-			{ MK_ILI9225_REG_VERT_WIN_ADDR2,	0x0000 },
+			{ MK_ILI9225_REG_HORI_WIN_ADDR1,		0x00AF },
+			{ MK_ILI9225_REG_HORI_WIN_ADDR2,		0x0000 },
+			{ MK_ILI9225_REG_VERT_WIN_ADDR1,		0x00DB },
+			{ MK_ILI9225_REG_VERT_WIN_ADDR2,		0x0000 },
 
 			/* Gamma curve data. */
 			{ MK_ILI9225_REG_GAMMA_CTRL1,		0x0000 },

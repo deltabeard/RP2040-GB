@@ -148,7 +148,7 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 				[pixels_buffer[x] & 3];
 	}
 
-	mk_ili9225_set_address(line + 15, 0xDB - 30);
+	//mk_ili9225_set_address(line + 15, 0xDB - 30);
 	//mk_ili9225_set_x(line + 15);
 #if USE_DMA
 	mk_ili9225_write_pixels_start();
@@ -194,7 +194,8 @@ void main_core1(void)
 #endif
 
 	/* Set LCD window to DMG size. */
-	//mk_ili9225_set_window(15, LCD_HEIGHT+15, 29, LCD_WIDTH+29);
+	mk_ili9225_set_window(15, LCD_HEIGHT + 15 - 1,
+			      30, LCD_WIDTH + 30 - 1);
 
 	while(1)
 	{
@@ -232,8 +233,8 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 	cmd.data = line;
 
 	//__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
-	//__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH / 4);
-	memcpy(pixels_buffer, pixels, LCD_WIDTH);
+	__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH / 4);
+	//memcpy(pixels_buffer, pixels, LCD_WIDTH);
 	multicore_fifo_push_blocking(cmd.full);
 }
 
@@ -314,6 +315,9 @@ int main(void)
 		} while(HEDLEY_LIKELY(gb.gb_frame == 0));
 
 		frames++;
+
+		/* Required since we do not know whether a button remains
+		 * pressed over a serial connection. */
 		gb.direct.joypad = 0xFF;
 		input = getchar_timeout_us(0);
 		if(input == PICO_ERROR_TIMEOUT)
@@ -341,29 +345,35 @@ int main(void)
 #endif
 		case 'c':
 		{
+			static ili9225_color_mode_e mode = ILI9225_COLOR_MODE_FULL;
 			union core_cmd cmd;
+
+			mode = !mode;
 			cmd.cmd = CORE_CMD_IDLE_SET;
-			cmd.data = ILI9225_COLOR_MODE_FULL;
+			cmd.data = mode;
 			multicore_fifo_push_blocking(cmd.full);
 			break;
 		}
 
 		case 'i':
 		{
-			union core_cmd cmd;
-			cmd.cmd = CORE_CMD_IDLE_SET;
-			cmd.data = ILI9225_COLOR_MODE_8COLOR;
-			multicore_fifo_push_blocking(cmd.full);
+			gb.direct.interlace = !gb.direct.interlace;
 			break;
 		}
 
 		case 'b':
 		{
 			uint64_t end_time;
+			uint32_t diff;
+			uint32_t fps;
+
 			end_time = time_us_64();
+			diff = end_time-start_time;
+			fps = frames/diff;
 			printf("Frames: %u\n"
-				"Time: %llu us\n",
-				frames, end_time-start_time);
+				"Time: %lu us\n"
+				"FPS: %lu\n",
+				frames, diff, fps);
 			stdio_flush();
 			frames = 0;
 			start_time = time_us_64();
@@ -371,8 +381,39 @@ int main(void)
 		}
 
 		case '\n':
+		case '\r':
 		{
 			gb.direct.joypad_bits.start = 0;
+			break;
+		}
+
+		case '\b':
+		{
+			gb.direct.joypad_bits.select = 0;
+			break;
+		}
+
+		case '8':
+		{
+			gb.direct.joypad_bits.up = 0;
+			break;
+		}
+
+		case '2':
+		{
+			gb.direct.joypad_bits.down = 0;
+			break;
+		}
+
+		case '4':
+		{
+			gb.direct.joypad_bits.left= 0;
+			break;
+		}
+
+		case '6':
+		{
+			gb.direct.joypad_bits.right = 0;
 			break;
 		}
 
