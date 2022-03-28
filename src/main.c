@@ -27,6 +27,7 @@
 #include <pico/stdio.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
+#include <pico/util/queue.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -43,6 +44,7 @@
 static uint dma_lcd;
 extern const unsigned char rom[];
 static uint8_t ram[32768];
+static queue_t core_queue;
 static int lcd_line_busy = 0;
 
 void mk_ili9225_set_rst(bool state)
@@ -135,9 +137,9 @@ static uint8_t pixels_buffer[LCD_WIDTH];
 void core1_lcd_draw_line(const uint_fast8_t line)
 {
 	const uint16_t palette[3][4] = {
-		{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
-		{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
-		{ 0x7FFF, 0x5294, 0x294A, 0x0000 }
+		{ 0xFFFF, 0x5294, 0x294A, 0x0000 },
+		{ 0xFFFF, 0x5294, 0x294A, 0x0000 },
+		{ 0xFFFF, 0x5294, 0x294A, 0x0000 }
 	};
 	static uint16_t fb[LCD_WIDTH] = { 0 };
 
@@ -149,7 +151,8 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 	}
 
 	//mk_ili9225_set_address(line + 15, 0xDB - 30);
-	//mk_ili9225_set_x(line + 15);
+	mk_ili9225_set_x(line + 15);
+
 #if USE_DMA
 	mk_ili9225_write_pixels_start();
 	dma_channel_transfer_from_buffer_now(dma_lcd, &fb[0], LCD_WIDTH);
@@ -183,7 +186,7 @@ void main_core1(void)
 	/* Clear LCD screen. */
 	mk_ili9225_write_pixels_start();
 	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
-			      SCREEN_SIZE_X*(SCREEN_SIZE_Y+1), true);
+			      SCREEN_SIZE_X*SCREEN_SIZE_Y, true);
 	/* TODO: Add sleeping wait. */
 	dma_channel_wait_for_finish_blocking(dma_lcd);
 	mk_ili9225_write_pixels_end();
@@ -233,7 +236,7 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 	cmd.data = line;
 
 	//__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
-	__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH / 4);
+	__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH);
 	//memcpy(pixels_buffer, pixels, LCD_WIDTH);
 	multicore_fifo_push_blocking(cmd.full);
 }
@@ -282,6 +285,7 @@ int main(void)
 	spi_set_format(spi0, 16, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
 	/* Start Core1, which processes requests to the LCD. */
+	//queue_init(&core_queue, sizeof(union cmd), 1);
 	puts_raw("Launching Core 1");
 	multicore_launch_core1(main_core1);
 
@@ -369,7 +373,7 @@ int main(void)
 
 			end_time = time_us_64();
 			diff = end_time-start_time;
-			fps = frames/diff;
+			fps = (frames*1000*1000)/diff;
 			printf("Frames: %u\n"
 				"Time: %lu us\n"
 				"FPS: %lu\n",
