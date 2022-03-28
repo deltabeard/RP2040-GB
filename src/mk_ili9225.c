@@ -482,12 +482,12 @@ void mk_ili9225_set_window(uint16_t hor_start, uint16_t hor_end,
 	assert(vert_start < vert_end);
 	assert(vert_end < SCREEN_SIZE_Y);
 
-	set_register(MK_ILI9225_REG_RAM_ADDR_SET1, hor_start);
-	set_register(MK_ILI9225_REG_RAM_ADDR_SET2, vert_start);
 	set_register(MK_ILI9225_REG_HORI_WIN_ADDR1, hor_end);
 	set_register(MK_ILI9225_REG_HORI_WIN_ADDR2, hor_start);
 	set_register(MK_ILI9225_REG_VERT_WIN_ADDR1, vert_end);
 	set_register(MK_ILI9225_REG_VERT_WIN_ADDR2, vert_start);
+	set_register(MK_ILI9225_REG_RAM_ADDR_SET1, hor_start);
+	set_register(MK_ILI9225_REG_RAM_ADDR_SET2, vert_start);
 }
 
 void mk_ili9225_set_x(uint8_t x)

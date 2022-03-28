@@ -27,7 +27,6 @@
 #include <pico/stdio.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
-#include <pico/util/queue.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -44,8 +43,22 @@
 static uint dma_lcd;
 extern const unsigned char rom[];
 static uint8_t ram[32768];
-static queue_t core_queue;
 static int lcd_line_busy = 0;
+
+union core_cmd {
+    struct {
+#define CORE_CMD_NOP		0
+#define CORE_CMD_LCD_LINE	1
+#define CORE_CMD_IDLE_SET	2
+	uint8_t cmd;
+	uint8_t unused1;
+	uint8_t unused2;
+	uint8_t data;
+    };
+    uint32_t full;
+};
+
+static uint8_t pixels_buffer[LCD_WIDTH];
 
 void mk_ili9225_set_rst(bool state)
 {
@@ -120,26 +133,12 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 #endif
 }
 
-union core_cmd {
-	struct {
-#define CORE_CMD_NOP		0
-#define CORE_CMD_LCD_LINE	1
-#define CORE_CMD_IDLE_SET	2
-		uint8_t cmd;
-		uint8_t unused1;
-		uint8_t unused2;
-		uint8_t data;
-	};
-	uint32_t full;
-};
-
-static uint8_t pixels_buffer[LCD_WIDTH];
 void core1_lcd_draw_line(const uint_fast8_t line)
 {
 	const uint16_t palette[3][4] = {
-		{ 0xFFFF, 0x5294, 0x294A, 0x0000 },
-		{ 0xFFFF, 0x5294, 0x294A, 0x0000 },
-		{ 0xFFFF, 0x5294, 0x294A, 0x0000 }
+		{ 0xFFFF, 0xA528, 0x5294, 0x0000 },
+		{ 0xFFFF, 0xA528, 0x5294, 0x0000 },
+		{ 0xFFFF, 0xA528, 0x5294, 0x0000 }
 	};
 	static uint16_t fb[LCD_WIDTH] = { 0 };
 
@@ -160,7 +159,7 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 	mk_ili9225_write_pixels_end();
 #else
 	mk_ili9225_write_pixels(fb, LCD_WIDTH);
-	//__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
 #endif
 }
 
@@ -186,7 +185,7 @@ void main_core1(void)
 	/* Clear LCD screen. */
 	mk_ili9225_write_pixels_start();
 	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
-			      SCREEN_SIZE_X*SCREEN_SIZE_Y, true);
+			      SCREEN_SIZE_X*SCREEN_SIZE_Y+1, true);
 	/* TODO: Add sleeping wait. */
 	dma_channel_wait_for_finish_blocking(dma_lcd);
 	mk_ili9225_write_pixels_end();
@@ -199,6 +198,7 @@ void main_core1(void)
 	/* Set LCD window to DMG size. */
 	mk_ili9225_set_window(15, LCD_HEIGHT + 15 - 1,
 			      30, LCD_WIDTH + 30 - 1);
+	//mk_ili9225_set_x(15);
 
 	while(1)
 	{
@@ -228,14 +228,14 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 	union core_cmd cmd;
 
 	/* Wait until previous line is sent. */
-	//while(lcd_line_busy)
-	//	tight_loop_contents();
+	while(__atomic_load_n(&lcd_line_busy, __ATOMIC_SEQ_CST))
+		tight_loop_contents();
 
 	/* Populate command. */
 	cmd.cmd = CORE_CMD_LCD_LINE;
 	cmd.data = line;
 
-	//__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
 	__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH);
 	//memcpy(pixels_buffer, pixels, LCD_WIDTH);
 	multicore_fifo_push_blocking(cmd.full);
@@ -278,14 +278,13 @@ int main(void)
 	gpio_set_slew_rate(GPIO_SDA, GPIO_SLEW_RATE_FAST);
 
 	/* Set SPI clock to use high frequency. */
-	clock_configure(clk_peri, 0,
-			CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
-			125 * 1000 * 1000, 125 * 1000 * 1000);
-	spi_init(spi0, 32*1000*1000);
+	//clock_configure(clk_peri, 0,
+	//		CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
+	//		125 * 1000 * 1000, 125 * 1000 * 1000);
+	spi_init(spi0, 24*1000*1000);
 	spi_set_format(spi0, 16, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
 	/* Start Core1, which processes requests to the LCD. */
-	//queue_init(&core_queue, sizeof(union cmd), 1);
 	puts_raw("Launching Core 1");
 	multicore_launch_core1(main_core1);
 
