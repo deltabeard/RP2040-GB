@@ -446,6 +446,7 @@ struct gb_s
 		void (*lcd_draw_line)(struct gb_s *gb,
 				const uint8_t *pixels,
 				const uint_fast8_t line);
+		uint8_t *pixels;
 
 		/* Palettes */
 		uint8_t bg_palette[4];
@@ -1205,7 +1206,7 @@ uint8_t __gb_execute_cb(struct gb_s *gb)
 #if ENABLE_LCD
 void __gb_draw_line(struct gb_s *gb)
 {
-	uint8_t pixels[160] = {0};
+	uint8_t *pixels = gb->display.pixels;
 
 	/* If LCD not initialised by front-end, don't render anything. */
 	if(gb->display.lcd_draw_line == NULL)
@@ -1232,6 +1233,9 @@ void __gb_draw_line(struct gb_s *gb)
 			return;
 		}
 	}
+
+	/* Initialise pixel output to 0. */
+	memset(pixels, 0, LCD_WIDTH);
 
 	/* If background is enabled, draw it. */
 	if(gb->gb_reg.LCDC & LCDC_BG_ENABLE)
@@ -3768,9 +3772,11 @@ const char* gb_get_rom_name(struct gb_s* gb, char *title_str)
 void gb_init_lcd(struct gb_s *gb,
 		void (*lcd_draw_line)(struct gb_s *gb,
 			const uint8_t *pixels,
-			const uint_fast8_t line))
+			const uint_fast8_t line),
+		uint8_t *pixels)
 {
 	gb->display.lcd_draw_line = lcd_draw_line;
+	gb->display.pixels = pixels;
 
 	gb->direct.interlace = 0;
 	gb->display.interlace_count = 0;
@@ -3781,5 +3787,10 @@ void gb_init_lcd(struct gb_s *gb,
 	gb->display.WY = 0;
 
 	return;
+}
+
+void gb_set_pixel_buffer(struct gb_s *gb, uint8_t *pixels)
+{
+	gb->display.pixels = pixels;
 }
 #endif

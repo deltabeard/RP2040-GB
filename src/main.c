@@ -1,5 +1,8 @@
+/* Peanut-GB defines. */
 #define ENABLE_LCD	1
 #define ENABLE_SOUND	0
+
+/* RP2040_GB defines. */
 #define USE_DMA		0
 
 /**
@@ -52,13 +55,14 @@ union core_cmd {
 #define CORE_CMD_IDLE_SET	2
 	uint8_t cmd;
 	uint8_t unused1;
-	uint8_t unused2;
+	uint8_t data2;
 	uint8_t data;
     };
     uint32_t full;
 };
 
-static uint8_t pixels_buffer[LCD_WIDTH];
+static uint8_t selected_pixels_buffer = 0;
+static uint8_t pixels_buffer[2][LCD_WIDTH];
 
 void mk_ili9225_set_rst(bool state)
 {
@@ -133,7 +137,7 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 #endif
 }
 
-void core1_lcd_draw_line(const uint_fast8_t line)
+void core1_lcd_draw_line(const uint8_t buf_num, const uint8_t line)
 {
 	const uint16_t palette[3][4] = {
 		{ 0xFFFF, 0xA528, 0x5294, 0x0000 },
@@ -141,12 +145,15 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 		{ 0xFFFF, 0xA528, 0x5294, 0x0000 }
 	};
 	static uint16_t fb[LCD_WIDTH] = { 0 };
+	const uint8_t *pixels;
+
+	pixels = pixels_buffer[buf_num];
 
 	//dma_channel_wait_for_finish_blocking(dma_lcd);
-	for(unsigned int x = 0; x < LCD_WIDTH; x++)
+	for(uint_fast8_t x = 0; x < LCD_WIDTH; x++)
 	{
-		fb[x] = palette[(pixels_buffer[x] & LCD_PALETTE_ALL) >> 4]
-				[pixels_buffer[x] & 3];
+		fb[x] = palette[(pixels[x] & LCD_PALETTE_ALL) >> 4]
+				[pixels[x] & 3];
 	}
 
 	//mk_ili9225_set_address(line + 15, 0xDB - 30);
@@ -159,7 +166,8 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 	mk_ili9225_write_pixels_end();
 #else
 	mk_ili9225_write_pixels(fb, LCD_WIDTH);
-	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
+	/* Signal that sending the last set of pixels was completed. */
+	__atomic_store_n(&lcd_line_busy, 0xFF, __ATOMIC_SEQ_CST);
 #endif
 }
 
@@ -206,7 +214,7 @@ void main_core1(void)
 		switch(cmd.cmd)
 		{
 		case CORE_CMD_LCD_LINE:
-			core1_lcd_draw_line(cmd.data);
+			core1_lcd_draw_line(cmd.data2, cmd.data);
 			break;
 
 		case CORE_CMD_IDLE_SET:
@@ -227,18 +235,27 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 {
 	union core_cmd cmd;
 
-	/* Wait until previous line is sent. */
-	while(__atomic_load_n(&lcd_line_busy, __ATOMIC_SEQ_CST))
+	/* We should be trying to return from this function as soon as
+	 * possible. */
+
+	/* Select other pixel buffer. */
+	selected_pixels_buffer = !selected_pixels_buffer;
+
+	/* Wait if selected buffer is still being transmitted. */
+	while(__atomic_load_n(&lcd_line_busy, __ATOMIC_SEQ_CST) == selected_pixels_buffer)
 		tight_loop_contents();
 
 	/* Populate command. */
 	cmd.cmd = CORE_CMD_LCD_LINE;
+	cmd.data2 = selected_pixels_buffer;
 	cmd.data = line;
 
-	__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
-	__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH);
-	//memcpy(pixels_buffer, pixels, LCD_WIDTH);
+	/* Set selected buffer in atomic value. */
+	__atomic_store_n(&lcd_line_busy, selected_pixels_buffer, __ATOMIC_SEQ_CST);
 	multicore_fifo_push_blocking(cmd.full);
+
+	/* Flip pixels buffer. */
+	gb_set_pixel_buffer(gb, pixels_buffer[selected_pixels_buffer]);
 }
 
 int main(void)
@@ -300,7 +317,7 @@ int main(void)
 	}
 
 #if ENABLE_LCD
-	gb_init_lcd(&gb, &lcd_draw_line);
+	gb_init_lcd(&gb, &lcd_draw_line, pixels_buffer[selected_pixels_buffer]);
 	//gb.direct.interlace = 1;
 #endif
 
