@@ -49,16 +49,28 @@ static uint8_t ram[32768];
 static int lcd_line_busy = 0;
 
 union core_cmd {
-    struct {
 #define CORE_CMD_NOP		0
 #define CORE_CMD_LCD_LINE	1
 #define CORE_CMD_IDLE_SET	2
-	uint8_t cmd;
-	uint8_t unused1;
-	uint8_t data2;
-	uint8_t data;
-    };
-    uint32_t full;
+	struct {
+		uint8_t cmd;
+		uint8_t unused1;
+		uint8_t data2;
+		uint8_t data;
+	} generic;
+	struct {
+		uint8_t cmd;
+		uint8_t unused1;
+		uint8_t buffer;
+		uint8_t line;
+	} lcd_line;
+	struct {
+		uint8_t cmd;
+		uint8_t unused1;
+		uint8_t unused2;
+		uint8_t mode;
+	} idle;
+	uint32_t full;
 };
 
 static uint8_t selected_pixels_buffer = 0;
@@ -174,7 +186,6 @@ void core1_lcd_draw_line(const uint8_t buf_num, const uint8_t line)
 void main_core1(void)
 {
 	static dma_channel_config c2;
-	static const uint16_t clear = 0x0000;
 	union core_cmd cmd;
 
 	/* Initilise and control LCD on core 1. */
@@ -185,18 +196,21 @@ void main_core1(void)
 	dma_lcd = dma_claim_unused_channel(true);
 	c2 = dma_channel_get_default_config(dma_lcd);
 	channel_config_set_transfer_data_size(&c2, DMA_SIZE_16);
-	channel_config_set_dreq(&c2,DREQ_SPI0_TX);
+	channel_config_set_dreq(&c2, DREQ_SPI0_TX);
 	channel_config_set_read_increment(&c2, false);
 	channel_config_set_write_increment(&c2, false);
 	channel_config_set_ring(&c2, false, 0);
 
 	/* Clear LCD screen. */
-	mk_ili9225_write_pixels_start();
-	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
-			      SCREEN_SIZE_X*SCREEN_SIZE_Y+1, true);
-	/* TODO: Add sleeping wait. */
-	dma_channel_wait_for_finish_blocking(dma_lcd);
-	mk_ili9225_write_pixels_end();
+	{
+		const uint16_t clear = 0x0000;
+		mk_ili9225_write_pixels_start();
+		dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
+			SCREEN_SIZE_X * SCREEN_SIZE_Y + 1, true);
+		/* TODO: Add sleeping wait. */
+		dma_channel_wait_for_finish_blocking(dma_lcd);
+		mk_ili9225_write_pixels_end();
+	}
 
 	/* Set DMA transfer to be the length of a DMG line. */
 	dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
@@ -211,14 +225,15 @@ void main_core1(void)
 	while(1)
 	{
 		cmd.full = multicore_fifo_pop_blocking();
-		switch(cmd.cmd)
+		switch(cmd.generic.cmd)
 		{
 		case CORE_CMD_LCD_LINE:
-			core1_lcd_draw_line(cmd.data2, cmd.data);
+			core1_lcd_draw_line(cmd.lcd_line.buffer,
+				cmd.lcd_line.line);
 			break;
 
 		case CORE_CMD_IDLE_SET:
-			mk_ili9225_display_control(true, cmd.data);
+			mk_ili9225_display_control(true, cmd.idle.mode);
 			break;
 
 		case CORE_CMD_NOP:
@@ -246,9 +261,9 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 		tight_loop_contents();
 
 	/* Populate command. */
-	cmd.cmd = CORE_CMD_LCD_LINE;
-	cmd.data2 = selected_pixels_buffer;
-	cmd.data = line;
+	cmd.lcd_line.cmd = CORE_CMD_LCD_LINE;
+	cmd.lcd_line.buffer = selected_pixels_buffer;
+	cmd.lcd_line.line = line;
 
 	/* Set selected buffer in atomic value. */
 	__atomic_store_n(&lcd_line_busy, selected_pixels_buffer, __ATOMIC_SEQ_CST);
@@ -369,8 +384,8 @@ int main(void)
 			union core_cmd cmd;
 
 			mode = !mode;
-			cmd.cmd = CORE_CMD_IDLE_SET;
-			cmd.data = mode;
+			cmd.idle.cmd = CORE_CMD_IDLE_SET;
+			cmd.idle.mode = mode;
 			multicore_fifo_push_blocking(cmd.full);
 			break;
 		}
