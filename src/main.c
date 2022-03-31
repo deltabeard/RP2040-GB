@@ -153,7 +153,7 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 				[pixels_buffer[x] & 3];
 	}
 
-	mk_ili9225_set_address(line + 15, LCD_WIDTH + 30);
+	mk_ili9225_set_address(line + 16, LCD_WIDTH + 30);
 	//mk_ili9225_set_x(line + 15);
 
 #if USE_DMA
@@ -190,7 +190,7 @@ void main_core1(void)
 	/* Clear LCD screen. */
 	mk_ili9225_write_pixels_start();
 	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
-			      SCREEN_SIZE_X*SCREEN_SIZE_Y, true);
+			      SCREEN_SIZE_X*SCREEN_SIZE_Y+16, true);
 	/* TODO: Add sleeping wait. */
 	dma_channel_wait_for_finish_blocking(dma_lcd);
 	mk_ili9225_write_pixels_end();
@@ -200,9 +200,9 @@ void main_core1(void)
 	//channel_config_set_read_increment(&c2, true);
 
 	/* Set LCD window to DMG size. */
-	mk_ili9225_set_window(15, LCD_HEIGHT + 15,
+	mk_ili9225_set_window(16, LCD_HEIGHT + 15,
 			      31, LCD_WIDTH + 30);
-	mk_ili9225_set_address(15, LCD_WIDTH + 30);
+	mk_ili9225_set_address(16, LCD_WIDTH + 30);
 	//mk_ili9225_set_x(15);
 
 	/* Clear GB Screen window. */
