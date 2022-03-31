@@ -207,7 +207,7 @@ void main_core1(void)
 
 	/* Clear GB Screen window. */
 	mk_ili9225_write_pixels_start();
-	dma_channel_set_trans_count(dma_lcd, LCD_HEIGHT*LCD_WIDTH, false);
+	dma_channel_set_trans_count(dma_lcd, LCD_HEIGHT*LCD_WIDTH+16, false);
 	dma_channel_set_read_addr(dma_lcd, &green, true);
 	/* TODO: Add sleeping wait. */
 	dma_channel_wait_for_finish_blocking(dma_lcd);
