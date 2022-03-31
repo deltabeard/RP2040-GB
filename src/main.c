@@ -1,3 +1,5 @@
+#include <sys/cdefs.h>
+
 #define ENABLE_LCD	1
 #define ENABLE_SOUND	0
 #define USE_DMA		0
@@ -27,6 +29,7 @@
 #include <pico/stdio.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
+#include <stdlib.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -50,6 +53,7 @@ union core_cmd {
 #define CORE_CMD_NOP		0
 #define CORE_CMD_LCD_LINE	1
 #define CORE_CMD_IDLE_SET	2
+#define CORE_CMD_SET_PIXEL	3
 	uint8_t cmd;
 	uint8_t unused1;
 	uint8_t unused2;
@@ -149,8 +153,8 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 				[pixels_buffer[x] & 3];
 	}
 
-	//mk_ili9225_set_address(line + 15, 0xDB - 30);
-	mk_ili9225_set_x(line + 15);
+	mk_ili9225_set_address(line + 15, LCD_WIDTH + 30);
+	//mk_ili9225_set_x(line + 15);
 
 #if USE_DMA
 	mk_ili9225_write_pixels_start();
@@ -163,16 +167,17 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 #endif
 }
 
+_Noreturn
 void main_core1(void)
 {
 	static dma_channel_config c2;
-	static const uint16_t clear = 0x0000;
+	static const uint16_t clear = 0xF800;
+	static const uint16_t green = 0x07D0;
 	union core_cmd cmd;
 
 	/* Initilise and control LCD on core 1. */
 	mk_ili9225_init();
 
-#if 1
 	/* Initilise DMA transfer for clearing the LCD screen. */
 	dma_lcd = dma_claim_unused_channel(true);
 	c2 = dma_channel_get_default_config(dma_lcd);
@@ -185,32 +190,57 @@ void main_core1(void)
 	/* Clear LCD screen. */
 	mk_ili9225_write_pixels_start();
 	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
-			      SCREEN_SIZE_X*SCREEN_SIZE_Y+1, true);
+			      SCREEN_SIZE_X*SCREEN_SIZE_Y, true);
 	/* TODO: Add sleeping wait. */
 	dma_channel_wait_for_finish_blocking(dma_lcd);
 	mk_ili9225_write_pixels_end();
 
 	/* Set DMA transfer to be the length of a DMG line. */
-	dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
-	channel_config_set_read_increment(&c2, true);
-#endif
+	//dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
+	//channel_config_set_read_increment(&c2, true);
 
 	/* Set LCD window to DMG size. */
-	mk_ili9225_set_window(15, LCD_HEIGHT + 15 - 1,
-			      30, LCD_WIDTH + 30 - 1);
+	mk_ili9225_set_window(15, LCD_HEIGHT + 15,
+			      31, LCD_WIDTH + 30);
+	mk_ili9225_set_address(15, LCD_WIDTH + 30);
 	//mk_ili9225_set_x(15);
+
+	/* Clear GB Screen window. */
+	mk_ili9225_write_pixels_start();
+	dma_channel_set_trans_count(dma_lcd, LCD_HEIGHT*LCD_WIDTH, false);
+	dma_channel_set_read_addr(dma_lcd, &green, true);
+	/* TODO: Add sleeping wait. */
+	dma_channel_wait_for_finish_blocking(dma_lcd);
+	mk_ili9225_write_pixels_end();
+
+	sleep_ms(1000);
 
 	while(1)
 	{
+		static uint8_t dot_x, dot_y;
+		static bool use_dot = false;
+
 		cmd.full = multicore_fifo_pop_blocking();
 		switch(cmd.cmd)
 		{
+		const uint16_t dot = 0x001F;
 		case CORE_CMD_LCD_LINE:
 			core1_lcd_draw_line(cmd.data);
+			if(use_dot)
+				goto set_pixel;
 			break;
 
 		case CORE_CMD_IDLE_SET:
 			mk_ili9225_display_control(true, cmd.data);
+			break;
+
+		case CORE_CMD_SET_PIXEL:
+			use_dot = true;
+			dot_x = cmd.unused2;
+			dot_y = cmd.data;
+set_pixel:
+			mk_ili9225_set_address(dot_x, dot_y);
+			mk_ili9225_write_pixels(&dot, 1);
 			break;
 
 		case CORE_CMD_NOP:
@@ -328,6 +358,7 @@ int main(void)
 
 		switch(input)
 		{
+		static uint8_t dot_x = 50, dot_y = 50;
 #if 0
 		static bool invert = false;
 		static bool sleep = false;
@@ -358,11 +389,63 @@ int main(void)
 			break;
 		}
 
-		case 'i':
+		case 'd':
 		{
-			gb.direct.interlace = !gb.direct.interlace;
+			printf("(x,y): (%d,%d)\n", dot_x, dot_y);
 			break;
 		}
+
+		case 'J':
+		{
+			union core_cmd cmd;
+			dot_x--;
+			cmd.cmd = CORE_CMD_SET_PIXEL;
+			cmd.unused2 = dot_x;
+			cmd.data = dot_y;
+			multicore_fifo_push_blocking(cmd.full);
+			break;
+		}
+
+		case 'L':
+		{
+			union core_cmd cmd;
+			dot_x++;
+			cmd.cmd = CORE_CMD_SET_PIXEL;
+			cmd.unused2 = dot_x;
+			cmd.data = dot_y;
+			multicore_fifo_push_blocking(cmd.full);
+			break;
+		}
+
+		case 'I':
+		{
+			union core_cmd cmd;
+			dot_y++;
+			cmd.cmd = CORE_CMD_SET_PIXEL;
+			cmd.unused2 = dot_x;
+			cmd.data = dot_y;
+			multicore_fifo_push_blocking(cmd.full);
+			break;
+		}
+
+		case 'K':
+		{
+			union core_cmd cmd;
+			dot_y--;
+			cmd.cmd = CORE_CMD_SET_PIXEL;
+			cmd.unused2 = dot_x;
+			cmd.data = dot_y;
+			multicore_fifo_push_blocking(cmd.full);
+			break;
+		}
+
+		case 'i':
+			gb.direct.interlace = !gb.direct.interlace;
+			break;
+
+		case 'f':
+			gb.direct.frame_skip = !gb.direct.frame_skip;
+			break;
 
 		case 'b':
 		{
