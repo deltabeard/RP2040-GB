@@ -1,10 +1,8 @@
 
 #define ENABLE_LCD	1
-#define ENABLE_SOUND	1
+#define ENABLE_SOUND	0
 #define ENABLE_HIPASS	0
 #define USE_DMA		0
-//#define AUDIO_SAMPLE_RATE 8000.0
-//#define AUDIO_NSAMPLES	268
 
 /**
  * Reducing VSYNC calculation to lower multiple.
@@ -47,6 +45,7 @@
 
 static uint dma_lcd;
 extern const unsigned char rom[];
+unsigned char rom_bank0[16384];
 static uint8_t ram[32768];
 static int lcd_line_busy = 0;
 
@@ -97,6 +96,9 @@ void mk_ili9225_delay_ms(unsigned ms)
 uint8_t gb_rom_read(struct gb_s *gb, const uint_fast32_t addr)
 {
 	(void) gb;
+	if(addr < sizeof(rom_bank0))
+		return rom_bank0[addr];
+
 	return rom[addr];
 }
 
@@ -322,7 +324,8 @@ int main(void)
 	puts_raw("Launching Core 1");
 	multicore_launch_core1(main_core1);
 
-	/* Initialise context. */
+	/* Initialise GB context. */
+	memcpy(rom_bank0, rom, sizeof(rom_bank0));
 	ret = gb_init(&gb, &gb_rom_read, &gb_cart_ram_read,
 		      &gb_cart_ram_write, &gb_error, NULL);
 	puts_raw("GB INIT");
