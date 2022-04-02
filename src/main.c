@@ -1,8 +1,10 @@
-#include <sys/cdefs.h>
 
 #define ENABLE_LCD	1
-#define ENABLE_SOUND	0
+#define ENABLE_SOUND	1
+#define ENABLE_HIPASS	0
 #define USE_DMA		0
+//#define AUDIO_SAMPLE_RATE 8000.0
+//#define AUDIO_NSAMPLES	268
 
 /**
  * Reducing VSYNC calculation to lower multiple.
@@ -16,6 +18,7 @@
 
 /* C Headers */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* RP2040 Headers */
@@ -29,7 +32,6 @@
 #include <pico/stdio.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
-#include <stdlib.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -310,10 +312,10 @@ int main(void)
 	gpio_set_slew_rate(GPIO_SDA, GPIO_SLEW_RATE_FAST);
 
 	/* Set SPI clock to use high frequency. */
-	//clock_configure(clk_peri, 0,
-	//		CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
-	//		125 * 1000 * 1000, 125 * 1000 * 1000);
-	spi_init(spi0, 24*1000*1000);
+	clock_configure(clk_peri, 0,
+			CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
+			125 * 1000 * 1000, 125 * 1000 * 1000);
+	spi_init(spi0, 32*1000*1000);
 	spi_set_format(spi0, 16, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
 	/* Start Core1, which processes requests to the LCD. */
@@ -335,12 +337,18 @@ int main(void)
 	gb_init_lcd(&gb, &lcd_draw_line);
 	//gb.direct.interlace = 1;
 #endif
+#if ENABLE_SOUND
+	audio_init();
+#endif
 
 	uint_fast32_t frames = 0;
 	uint64_t start_time = time_us_64();
 	while(1)
 	{
 		int input;
+#if ENABLE_SOUND
+		static float stream[AUDIO_NSAMPLES];
+#endif
 
 		gb.gb_frame = 0;
 
@@ -350,6 +358,9 @@ int main(void)
 		} while(HEDLEY_LIKELY(gb.gb_frame == 0));
 
 		frames++;
+#if ENABLE_SOUND
+		audio_callback(NULL, stream, AUDIO_NSAMPLES);
+#endif
 
 		/* Required since we do not know whether a button remains
 		 * pressed over a serial connection. */

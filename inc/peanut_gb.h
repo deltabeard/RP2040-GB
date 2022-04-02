@@ -31,6 +31,9 @@
 
 #pragma once
 
+#include "hedley.h"
+#include "minigb_apu.h"
+
 #include <stdint.h>	/* Required for int types */
 #include <string.h>	/* Required for memset */
 #include <time.h>	/* Required for tm struct */
@@ -3371,7 +3374,7 @@ void __gb_step_cpu(struct gb_s *gb)
 	}
 
 	/* Check serial transmission. */
-	if(gb->gb_reg.SC & SERIAL_SC_TX_START)
+	if(HEDLEY_UNLIKELY(gb->gb_reg.SC & SERIAL_SC_TX_START))
 	{
 		/* If new transfer, call TX function. */
 		if(gb->counter.serial_count == 0 && gb->gb_serial_tx != NULL)
