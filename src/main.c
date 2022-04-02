@@ -30,6 +30,7 @@
 #include <pico/stdio.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
+#include <sys/unistd.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -64,6 +65,8 @@ union core_cmd {
 };
 
 static uint8_t pixels_buffer[LCD_WIDTH];
+
+#define putstdio(x) write(1, x, strlen(x))
 
 void mk_ili9225_set_rst(bool state)
 {
@@ -125,15 +128,14 @@ void gb_cart_ram_write(struct gb_s *gb, const uint_fast32_t addr,
  */
 void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 {
-#if 0
-	const char* gb_err_str[4] =
-		{
+#if 1
+	const char* gb_err_str[4] = {
 			"UNKNOWN",
 			"INVALID OPCODE",
 			"INVALID READ",
 			"INVALID WRITE"
 		};
-	fprintf(stderr, "Error %d occurred: %s\n. Abort.\n",
+	printf("Error %d occurred: %s\n. Abort.\n",
 		gb_err,
 		gb_err >= GB_INVALID_MAX ?
 		gb_err_str[0] : gb_err_str[gb_err]);
@@ -219,7 +221,8 @@ void main_core1(void)
 	mk_ili9225_write_pixels_end();
 #endif
 
-	sleep_ms(1000);
+	// Sleep used for debugging LCD window.
+	//sleep_ms(1000);
 
 	while(1)
 	{
@@ -272,8 +275,7 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 	cmd.data = line;
 
 	__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
-	__aeabi_memcpy4(pixels_buffer, pixels, LCD_WIDTH);
-	//memcpy(pixels_buffer, pixels, LCD_WIDTH);
+	memcpy(pixels_buffer, pixels, LCD_WIDTH);
 	multicore_fifo_push_blocking(cmd.full);
 }
 
@@ -298,7 +300,7 @@ int main(void)
 	/* Initialise USB serial connection for debugging. */
 	stdio_init_all();
 	//(void) getchar();
-	puts_raw("Starting");
+	putstdio("INIT: ");
 
 	/* Initialise GPIO pins. */
 	gpio_set_function(GPIO_CS, GPIO_FUNC_SIO);
@@ -321,14 +323,15 @@ int main(void)
 	spi_set_format(spi0, 16, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
 	/* Start Core1, which processes requests to the LCD. */
-	puts_raw("Launching Core 1");
+	//puts_raw("Launching Core 1");
+	putstdio("CORE1 ");
 	multicore_launch_core1(main_core1);
 
 	/* Initialise GB context. */
 	memcpy(rom_bank0, rom, sizeof(rom_bank0));
 	ret = gb_init(&gb, &gb_rom_read, &gb_cart_ram_read,
 		      &gb_cart_ram_write, &gb_error, NULL);
-	puts_raw("GB INIT");
+	putstdio("GB ");
 
 	if(ret != GB_INIT_NO_ERROR)
 	{
@@ -338,12 +341,15 @@ int main(void)
 
 #if ENABLE_LCD
 	gb_init_lcd(&gb, &lcd_draw_line);
+	putstdio("LCD ");
 	//gb.direct.interlace = 1;
 #endif
 #if ENABLE_SOUND
 	audio_init();
+	putstdio("AUDIO ");
 #endif
 
+	putstdio("\n> ");
 	uint_fast32_t frames = 0;
 	uint64_t start_time = time_us_64();
 	while(1)
