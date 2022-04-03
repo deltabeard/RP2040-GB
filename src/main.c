@@ -1,6 +1,6 @@
 
 #define ENABLE_LCD	1
-#define ENABLE_SOUND	0
+#define ENABLE_SOUND	1
 #define ENABLE_HIPASS	0
 #define USE_DMA		0
 
@@ -181,7 +181,7 @@ void main_core1(void)
 	static const uint16_t green = 0x07D0;
 	union core_cmd cmd;
 
-	/* Initilise and control LCD on core 1. */
+	/* Initialise and control LCD on core 1. */
 	mk_ili9225_init();
 
 	/* Initilise DMA transfer for clearing the LCD screen. */
@@ -202,8 +202,9 @@ void main_core1(void)
 	mk_ili9225_write_pixels_end();
 
 	/* Set DMA transfer to be the length of a DMG line. */
-	//dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
-	//channel_config_set_read_increment(&c2, true);
+	dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
+	channel_config_set_read_increment(&c2, true);
+	//dma_sniffer_enable(dma_lcd, 0, true);
 
 	/* Set LCD window to DMG size. */
 	mk_ili9225_set_window(16, LCD_HEIGHT + 15,
