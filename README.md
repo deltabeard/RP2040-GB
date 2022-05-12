@@ -11,3 +11,7 @@ Runs at more than 70 fps without audio emulation. WIth frame skip and interlacin
 Further work is required to improve Peanut-GB for this microcontroller environment. This includes:
 
 - Using an APU that is optimised for space and speed. No, or very few, floating point operations.
+
+## License
+
+MIT
