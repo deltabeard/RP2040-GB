@@ -9,28 +9,19 @@
 
 #include <stdint.h>
 
+#define AUDIO_SAMPLE_RATE	32768
+
 #define DMG_CLOCK_FREQ		4194304.0
 #define SCREEN_REFRESH_CYCLES	70224.0
 #define VERTICAL_SYNC		(DMG_CLOCK_FREQ/SCREEN_REFRESH_CYCLES)
 
-#ifndef ENABLE_HIPASS
-# define ENABLE_HIPASS 1
-#endif
-
-#ifndef AUDIO_SAMPLE_RATE
-# define AUDIO_SAMPLE_RATE	8000.0
-#endif
-
-#ifndef AUDIO_NSAMPLES
-# define AUDIO_NSAMPLES		256
-//((unsigned)(AUDIO_SAMPLE_RATE / VERTICAL_SYNC) * 2)
-#endif
+#define AUDIO_SAMPLES		((unsigned)(AUDIO_SAMPLE_RATE / VERTICAL_SYNC))
 
 /**
  * Fill allocated buffer "data" with "len" number of 32-bit floating point
  * samples (native endian order) in stereo interleaved format.
  */
-void audio_callback(void *ptr, void *data, int len);
+void audio_callback(void *ptr, uint8_t *data, int len);
 
 /**
  * Read audio register at given address "addr".

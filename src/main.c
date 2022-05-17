@@ -14,8 +14,10 @@
  */
 
 #define ENABLE_LCD	1
-#define ENABLE_SOUND	1
-#define ENABLE_HIPASS	0
+#define ENABLE_SOUND	0
+
+/* Use DMA for all drawing to LCD. Benefits aren't fully realised at the moment
+ * due to busy loops waiting for DMA completion. */
 #define USE_DMA		0
 
 /**
@@ -23,6 +25,7 @@
  * When setting a clock IRQ to DMG_CLOCK_FREQ_REDUCED, count to
  * SCREEN_REFRESH_CYCLES_REDUCED to obtain the time required each VSYNC.
  * DMG_CLOCK_FREQ_REDUCED = 2^18, and SCREEN_REFRESH_CYCLES_REDUCED = 4389.
+ * Currently unused.
  */
 #define VSYNC_REDUCTION_FACTOR 16u
 #define SCREEN_REFRESH_CYCLES_REDUCED (SCREEN_REFRESH_CYCLES/VSYNC_REDUCTION_FACTOR)
@@ -58,17 +61,29 @@
 #define GPIO_RS		4
 #define GPIO_RST	5
 
+/* DMA channel for LCD communication. */
 static uint dma_lcd;
+/* Definition of ROM data variable. Must be declared like:
+ * #include <pico/platform.h>
+ * const unsigned char __in_flash("rom") rom[] = {
+ * 	...
+ * };
+ */
 extern const unsigned char rom[];
 unsigned char rom_bank0[16384];
 static uint8_t ram[32768];
 static int lcd_line_busy = 0;
 
+/* Multicore command structure. */
 union core_cmd {
     struct {
+	/* Does nothing. */
 #define CORE_CMD_NOP		0
+	/* Set line "data" on the LCD. Pixel data is in pixels_buffer. */
 #define CORE_CMD_LCD_LINE	1
+	/* Control idle mode on the LCD. Limits colours to 2 bits. */
 #define CORE_CMD_IDLE_SET	2
+	/* Set a specific pixel. For debugging. */
 #define CORE_CMD_SET_PIXEL	3
 	uint8_t cmd;
 	uint8_t unused1;
@@ -78,10 +93,12 @@ union core_cmd {
     uint32_t full;
 };
 
+/* Pixel data is stored in here. */
 static uint8_t pixels_buffer[LCD_WIDTH];
 
 #define putstdio(x) write(1, x, strlen(x))
 
+/* Functions required for communication with the ILI9225. */
 void mk_ili9225_set_rst(bool state)
 {
 	gpio_put(GPIO_RST, state);
@@ -181,6 +198,7 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 	dma_channel_transfer_from_buffer_now(dma_lcd, &fb[0], LCD_WIDTH);
 	dma_channel_wait_for_finish_blocking(dma_lcd);
 	mk_ili9225_write_pixels_end();
+	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
 #else
 	mk_ili9225_write_pixels(fb, LCD_WIDTH);
 	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
