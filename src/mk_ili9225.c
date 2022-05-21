@@ -389,7 +389,7 @@ unsigned mk_ili9225_init(void)
 			{ MK_ILI9225_REG_LCD_AC_DRIVING_CTRL,	0x0100 },
 			/* Increment vertical and horizontal address.
 			 * Use vertical image. */
-			{ MK_ILI9225_REG_ENTRY_MODE,		0x1018 },
+			{ MK_ILI9225_REG_ENTRY_MODE,		0x1008 },
 			/* Turn off all display outputs. */
 			{ MK_ILI9225_REG_DISPLAY_CTRL,		0x0000 },
 			/* Set porches to 8 lines. */
