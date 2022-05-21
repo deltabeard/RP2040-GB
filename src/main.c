@@ -21,7 +21,7 @@
 
 /* Use DMA for all drawing to LCD. Benefits aren't fully realised at the moment
  * due to busy loops waiting for DMA completion. */
-#define USE_DMA		1
+#define USE_DMA		0
 
 /**
  * Reducing VSYNC calculation to lower multiple.
