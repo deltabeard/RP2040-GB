@@ -182,18 +182,17 @@ void core1_irq_dma_lcd_end_transfer(void)
 {
 	mk_ili9225_write_pixels_end();
 	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
-	//irq_clear(DMA_IRQ_0);
 	dma_channel_acknowledge_irq0(dma_lcd);
 }
 
 void core1_lcd_draw_line(const uint_fast8_t line)
 {
 	const uint16_t palette[3][4] = {
-		{ 0xFFFF, 0xA528, 0x5294, 0x0000 },
-		{ 0xFFFF, 0xA528, 0x5294, 0x0000 },
-		{ 0xFFFF, 0xA528, 0x5294, 0x0000 }
+		{ 0xFFFF, 0x651F, 0x001F, 0x0000 },
+		{ 0xFFFF, 0xFC10, 0x89C7, 0x0000 },
+		{ 0xFFFF, 0x651F, 0x001F, 0x0000 }
 	};
-	static uint16_t fb[LCD_WIDTH] = { 0 };
+	static uint16_t fb[LCD_WIDTH];
 
 	//dma_channel_wait_for_finish_blocking(dma_lcd);
 	for(unsigned int x = 0; x < LCD_WIDTH; x++)
@@ -222,8 +221,7 @@ _Noreturn
 void main_core1(void)
 {
 	static dma_channel_config c2;
-	static const uint16_t clear = 0xF800;
-	static const uint16_t green = 0x07D0;
+	static const uint16_t red = 0xF800;
 	union core_cmd cmd;
 
 	/* Initialise and control LCD on core 1. */
@@ -245,7 +243,7 @@ void main_core1(void)
 
 	/* Clear LCD screen. */
 	mk_ili9225_write_pixels_start();
-	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
+	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &red,
 			      SCREEN_SIZE_X*SCREEN_SIZE_Y+16, true);
 	do {
 		__wfi();
