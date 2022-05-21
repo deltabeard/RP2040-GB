@@ -276,30 +276,15 @@ void main_core1(void)
 
 	while(1)
 	{
-		static uint8_t dot_x, dot_y;
-		static bool use_dot = false;
-
 		cmd.full = multicore_fifo_pop_blocking();
 		switch(cmd.cmd)
 		{
-		const uint16_t dot = 0x001F;
 		case CORE_CMD_LCD_LINE:
 			core1_lcd_draw_line(cmd.data);
-			if(use_dot)
-				goto set_pixel;
 			break;
 
 		case CORE_CMD_IDLE_SET:
 			mk_ili9225_display_control(true, cmd.data);
-			break;
-
-		case CORE_CMD_SET_PIXEL:
-			use_dot = true;
-			dot_x = cmd.unused2;
-			dot_y = cmd.data;
-set_pixel:
-			mk_ili9225_set_address(dot_x, dot_y);
-			mk_ili9225_write_pixels(&dot, 1);
 			break;
 
 		case CORE_CMD_NOP:
@@ -423,14 +408,15 @@ int main(void)
 
 		/* Required since we do not know whether a button remains
 		 * pressed over a serial connection. */
-		gb.direct.joypad = 0xFF;
+		if(frames % 4 == 0)
+			gb.direct.joypad = 0xFF;
+
 		input = getchar_timeout_us(0);
 		if(input == PICO_ERROR_TIMEOUT)
 			continue;
 
 		switch(input)
 		{
-		static uint8_t dot_x = 50, dot_y = 50;
 #if 0
 		static bool invert = false;
 		static bool sleep = false;
@@ -457,56 +443,6 @@ int main(void)
 			mode = !mode;
 			cmd.cmd = CORE_CMD_IDLE_SET;
 			cmd.data = mode;
-			multicore_fifo_push_blocking(cmd.full);
-			break;
-		}
-
-		case 'd':
-		{
-			printf("(x,y): (%d,%d)\n", dot_x, dot_y);
-			break;
-		}
-
-		case 'J':
-		{
-			union core_cmd cmd;
-			dot_x--;
-			cmd.cmd = CORE_CMD_SET_PIXEL;
-			cmd.unused2 = dot_x;
-			cmd.data = dot_y;
-			multicore_fifo_push_blocking(cmd.full);
-			break;
-		}
-
-		case 'L':
-		{
-			union core_cmd cmd;
-			dot_x++;
-			cmd.cmd = CORE_CMD_SET_PIXEL;
-			cmd.unused2 = dot_x;
-			cmd.data = dot_y;
-			multicore_fifo_push_blocking(cmd.full);
-			break;
-		}
-
-		case 'I':
-		{
-			union core_cmd cmd;
-			dot_y++;
-			cmd.cmd = CORE_CMD_SET_PIXEL;
-			cmd.unused2 = dot_x;
-			cmd.data = dot_y;
-			multicore_fifo_push_blocking(cmd.full);
-			break;
-		}
-
-		case 'K':
-		{
-			union core_cmd cmd;
-			dot_y--;
-			cmd.cmd = CORE_CMD_SET_PIXEL;
-			cmd.unused2 = dot_x;
-			cmd.data = dot_y;
 			multicore_fifo_push_blocking(cmd.full);
 			break;
 		}
