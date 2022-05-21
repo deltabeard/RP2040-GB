@@ -32,7 +32,6 @@
 #pragma once
 
 #include "hedley.h"
-#include "minigb_apu.h"
 
 #include <stdint.h>	/* Required for int types */
 #include <string.h>	/* Required for memset */

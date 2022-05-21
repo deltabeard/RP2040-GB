@@ -14,11 +14,14 @@
  */
 
 #define ENABLE_LCD	1
-#define ENABLE_SOUND	0
+
+#ifndef ENABLE_SOUND
+# define ENABLE_SOUND	0
+#endif
 
 /* Use DMA for all drawing to LCD. Benefits aren't fully realised at the moment
  * due to busy loops waiting for DMA completion. */
-#define USE_DMA		0
+#define USE_DMA		1
 
 /**
  * Reducing VSYNC calculation to lower multiple.
@@ -48,6 +51,7 @@
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
 #include <sys/unistd.h>
+#include <hardware/irq.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -174,6 +178,14 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 #endif
 }
 
+void core1_irq_dma_lcd_end_transfer(void)
+{
+	mk_ili9225_write_pixels_end();
+	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
+	//irq_clear(DMA_IRQ_0);
+	dma_channel_acknowledge_irq0(dma_lcd);
+}
+
 void core1_lcd_draw_line(const uint_fast8_t line)
 {
 	const uint16_t palette[3][4] = {
@@ -196,9 +208,10 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 #if USE_DMA
 	mk_ili9225_write_pixels_start();
 	dma_channel_transfer_from_buffer_now(dma_lcd, &fb[0], LCD_WIDTH);
-	dma_channel_wait_for_finish_blocking(dma_lcd);
-	mk_ili9225_write_pixels_end();
-	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
+	do {
+		__wfi();
+	} while (dma_channel_is_busy(dma_lcd));
+	__compiler_memory_barrier();
 #else
 	mk_ili9225_write_pixels(fb, LCD_WIDTH);
 	__atomic_store_n(&lcd_line_busy, 0, __ATOMIC_SEQ_CST);
@@ -225,13 +238,19 @@ void main_core1(void)
 	channel_config_set_write_increment(&c2, false);
 	channel_config_set_ring(&c2, false, 0);
 
+	/* Enable IRQ for wake on interrupt functionality. */
+	irq_set_exclusive_handler(DMA_IRQ_0, core1_irq_dma_lcd_end_transfer);
+	dma_channel_set_irq0_enabled(dma_lcd, true);
+	irq_set_enabled(DMA_IRQ_0, true);
+
 	/* Clear LCD screen. */
 	mk_ili9225_write_pixels_start();
 	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear,
 			      SCREEN_SIZE_X*SCREEN_SIZE_Y+16, true);
-	/* TODO: Add sleeping wait. */
-	dma_channel_wait_for_finish_blocking(dma_lcd);
-	mk_ili9225_write_pixels_end();
+	do {
+		__wfi();
+	} while (dma_channel_is_busy(dma_lcd));
+	__compiler_memory_barrier();
 
 	/* Set DMA transfer to be the length of a DMG line. */
 	dma_channel_set_trans_count(dma_lcd, LCD_WIDTH, false);
@@ -389,7 +408,7 @@ int main(void)
 	{
 		int input;
 #if ENABLE_SOUND
-		static float stream[AUDIO_NSAMPLES];
+		static uint16_t stream[1098];
 #endif
 
 		gb.gb_frame = 0;
@@ -401,7 +420,7 @@ int main(void)
 
 		frames++;
 #if ENABLE_SOUND
-		audio_callback(NULL, stream, AUDIO_NSAMPLES);
+		audio_callback(NULL, stream, 1098);
 #endif
 
 		/* Required since we do not know whether a button remains

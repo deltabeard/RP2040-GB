@@ -8,8 +8,18 @@ project(RP2040_GB C CXX)
 # Initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-add_executable(RP2040_GB src/main.c src/rom.c src/mk_ili9225.c ext/minigb_apu/minigb_apu.c)
-target_include_directories(RP2040_GB PRIVATE inc ext/minigb_apu)
+add_executable(RP2040_GB src/main.c src/rom.c src/mk_ili9225.c)
+target_include_directories(RP2040_GB PRIVATE inc)
+
+SET(ENABLE_SOUND FALSE CACHE BOOL "Enable Sound emulation")
+if(ENABLE_SOUND)
+	ADD_COMPILE_DEFINITIONS(ENABLE_SOUND=1)
+	target_sources(RP2040_GB PRIVATE ext/minigb_apu/minigb_apu.c)
+	target_include_directories(RP2040_GB PRIVATE ext/minigb_apu)
+else()
+	ADD_COMPILE_DEFINITIONS(ENABLE_SOUND=0)
+endif()
+
 target_link_libraries(RP2040_GB
         pico_stdlib pico_stdio pico_bootrom pico_multicore pico_stdio  pico_multicore
         hardware_clocks hardware_pio hardware_vreg hardware_pio
