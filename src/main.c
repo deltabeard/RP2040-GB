@@ -97,6 +97,12 @@ union core_cmd {
     uint32_t full;
 };
 
+struct gb_priv {
+    uint32_t lcd_line_hashes[LCD_HEIGHT];
+    uint dma_pixel_buffer_chan;
+};
+static struct gb_priv gb_priv = { 0 };
+
 /* Pixel data is stored in here. */
 static uint8_t pixels_buffer[LCD_WIDTH];
 
@@ -274,6 +280,7 @@ void main_core1(void)
 	// Sleep used for debugging LCD window.
 	//sleep_ms(1000);
 
+	/* Handle commands coming from core0. */
 	while(1)
 	{
 		cmd.full = multicore_fifo_pop_blocking();
@@ -296,6 +303,7 @@ void main_core1(void)
 	HEDLEY_UNREACHABLE();
 }
 
+#if ENABLE_LCD
 void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 		   const uint_fast8_t line)
 {
@@ -305,14 +313,26 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[LCD_WIDTH],
 	while(__atomic_load_n(&lcd_line_busy, __ATOMIC_SEQ_CST))
 		tight_loop_contents();
 
+	//memcpy(pixels_buffer, pixels, LCD_WIDTH);
+	dma_hw->sniff_data = 0;
+	//line_to_copy = line;
+	dma_channel_set_read_addr(gb_priv.dma_pixel_buffer_chan, pixels, false);
+	dma_channel_set_write_addr(gb_priv.dma_pixel_buffer_chan, pixels_buffer, true);
+	dma_channel_wait_for_finish_blocking(gb_priv.dma_pixel_buffer_chan);
+
+	if(gb_priv.lcd_line_hashes[line] == dma_hw->sniff_data)
+		return;
+
+	gb_priv.lcd_line_hashes[line] = dma_hw->sniff_data;
+
 	/* Populate command. */
 	cmd.cmd = CORE_CMD_LCD_LINE;
 	cmd.data = line;
 
 	__atomic_store_n(&lcd_line_busy, 1, __ATOMIC_SEQ_CST);
-	memcpy(pixels_buffer, pixels, LCD_WIDTH);
 	multicore_fifo_push_blocking(cmd.full);
 }
+#endif
 
 int main(void)
 {
@@ -354,18 +374,17 @@ int main(void)
 	clock_configure(clk_peri, 0,
 			CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
 			125 * 1000 * 1000, 125 * 1000 * 1000);
-	spi_init(spi0, 32*1000*1000);
+	spi_init(spi0, 16*1000*1000);
 	spi_set_format(spi0, 16, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
 	/* Start Core1, which processes requests to the LCD. */
-	//puts_raw("Launching Core 1");
 	putstdio("CORE1 ");
 	multicore_launch_core1(main_core1);
 
 	/* Initialise GB context. */
 	memcpy(rom_bank0, rom, sizeof(rom_bank0));
 	ret = gb_init(&gb, &gb_rom_read, &gb_cart_ram_read,
-		      &gb_cart_ram_write, &gb_error, NULL);
+		      &gb_cart_ram_write, &gb_error, &gb_priv);
 	putstdio("GB ");
 
 	if(ret != GB_INIT_NO_ERROR)
@@ -376,6 +395,32 @@ int main(void)
 
 #if ENABLE_LCD
 	gb_init_lcd(&gb, &lcd_draw_line);
+	{
+		/* initialise pixel buffer copy DMA. */
+		static dma_channel_config dma_config;
+		gb_priv.dma_pixel_buffer_chan = dma_claim_unused_channel(true);
+		dma_config = dma_channel_get_default_config(gb_priv.dma_pixel_buffer_chan);
+		channel_config_set_transfer_data_size(&dma_config, DMA_SIZE_32);
+		channel_config_set_read_increment(&dma_config, true);
+		channel_config_set_write_increment(&dma_config, true);
+		dma_sniffer_enable(gb_priv.dma_pixel_buffer_chan, 0x0, true);
+		channel_config_set_sniff_enable(&dma_config, true);
+
+#if 0
+		irq_set_exclusive_handler(DMA_IRQ_1, core0_irq_dma_lcd_line_copy);
+		dma_channel_set_irq1_enabled(gb_priv.dma_pixel_buffer_chan, true);
+		irq_set_enabled(DMA_IRQ_1, true);
+#endif
+
+		dma_channel_configure(
+			gb_priv.dma_pixel_buffer_chan,
+			&dma_config,
+			pixels_buffer,
+			0, /* We don't have a pointer to the pixel buffer here. */
+			LCD_WIDTH/sizeof(uint32_t),
+			false
+		);
+	}
 	putstdio("LCD ");
 	//gb.direct.interlace = 1;
 #endif
