@@ -31,7 +31,7 @@ Since RP2040-GB is configured to run from internal RAM for performance, the `__i
 
 The project should now compile with your ROM builtin.
 
-Depending on the license of the ROM that you have built into this project, the output RP2040 binary may not be redistributable under the terms of you local copyright law.
+Depending on the license of the ROM that you have built into this project, the output RP2040 binary may not be redistributable under the terms of your local copyright law.
 
 ## Future work
 
