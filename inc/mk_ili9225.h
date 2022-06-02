@@ -51,6 +51,12 @@ extern void mk_ili9225_set_rs(bool state);
 extern void mk_ili9225_set_cs(bool state);
 
 /**
+ * Controls state of LED pin.
+ * \param state	Set to 0 on low output, else high.
+ */
+extern void mk_ili9225_set_led(bool state);
+
+/**
  * Sends data to the ILI9225 using SPI. Return only after sending data.
  * \param halfword Data to send.
  */

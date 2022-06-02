@@ -58,12 +58,22 @@
 #include "peanut_gb.h"
 #include "mk_ili9225.h"
 
-/* LCD Connections. */
-#define GPIO_CS		1
-#define GPIO_CLK	2
-#define GPIO_SDA	3
-#define GPIO_RS		4
-#define GPIO_RST	5
+/* GPIO Connections. */
+#define GPIO_UP		2
+#define GPIO_DOWN	3
+#define GPIO_LEFT	4
+#define GPIO_RIGHT	5
+#define GPIO_A		6
+#define GPIO_B		7
+#define GPIO_SELECT	8
+#define GPIO_START	9
+#define GPIO_BUZZER	15
+#define GPIO_CS		17
+#define GPIO_CLK	18
+#define GPIO_SDA	19
+#define GPIO_RS		20
+#define GPIO_RST	21
+#define GPIO_LED	22
 
 /* DMA channel for LCD communication. */
 static uint dma_lcd;
@@ -122,6 +132,11 @@ void mk_ili9225_set_rs(bool state)
 void mk_ili9225_set_cs(bool state)
 {
 	gpio_put(GPIO_CS, state);
+}
+
+void mk_ili9225_set_led(bool state)
+{
+	gpio_put(GPIO_LED, state);
 }
 
 void mk_ili9225_spi_write16(const uint16_t *halfwords, size_t len)
@@ -208,7 +223,7 @@ void core1_lcd_draw_line(const uint_fast8_t line)
 	}
 
 	//mk_ili9225_set_address(line + 16, LCD_WIDTH + 30);
-	mk_ili9225_set_x(line + 16);
+	mk_ili9225_set_x((SCREEN_SIZE_X - 16) - line);
 
 #if USE_DMA
 	mk_ili9225_write_pixels_start();
@@ -227,7 +242,7 @@ _Noreturn
 void main_core1(void)
 {
 	static dma_channel_config c2;
-	static const uint16_t red = 0xF800;
+	static const uint16_t clear_screen_colour = 0x0000;
 	union core_cmd cmd;
 
 	/* Initialise and control LCD on core 1. */
@@ -249,7 +264,7 @@ void main_core1(void)
 
 	/* Clear LCD screen. */
 	mk_ili9225_write_pixels_start();
-	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &red,
+	dma_channel_configure(dma_lcd, &c2, &spi_get_hw(spi0)->dr, &clear_screen_colour,
 			      SCREEN_SIZE_X*SCREEN_SIZE_Y+16, true);
 	do {
 		__wfi();
@@ -264,7 +279,7 @@ void main_core1(void)
 	/* Set LCD window to DMG size. */
 	mk_ili9225_set_window(16, LCD_HEIGHT + 15,
 			      31, LCD_WIDTH + 30);
-	mk_ili9225_set_address(16, LCD_WIDTH + 30);
+	//mk_ili9225_set_address(16, LCD_WIDTH + 30);
 	//mk_ili9225_set_x(15);
 
 #if 0
@@ -358,17 +373,46 @@ int main(void)
 	putstdio("INIT: ");
 
 	/* Initialise GPIO pins. */
+	gpio_set_function(GPIO_UP, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_DOWN, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_LEFT, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_RIGHT, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_A, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_B, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_SELECT, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_START, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_BUZZER, GPIO_FUNC_PWM);
 	gpio_set_function(GPIO_CS, GPIO_FUNC_SIO);
 	gpio_set_function(GPIO_CLK, GPIO_FUNC_SPI);
 	gpio_set_function(GPIO_SDA, GPIO_FUNC_SPI);
 	gpio_set_function(GPIO_RS, GPIO_FUNC_SIO);
 	gpio_set_function(GPIO_RST, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_LED, GPIO_FUNC_SIO);
 
+	gpio_set_dir(GPIO_UP, false);
+	gpio_set_dir(GPIO_DOWN, false);
+	gpio_set_dir(GPIO_LEFT, false);
+	gpio_set_dir(GPIO_RIGHT, false);
+	gpio_set_dir(GPIO_A, false);
+	gpio_set_dir(GPIO_B, false);
+	gpio_set_dir(GPIO_SELECT, false);
+	gpio_set_dir(GPIO_START, false);
+	gpio_set_dir(GPIO_BUZZER, true);
 	gpio_set_dir(GPIO_CS, true);
 	gpio_set_dir(GPIO_RS, true);
 	gpio_set_dir(GPIO_RST, true);
+	gpio_set_dir(GPIO_LED, true);
 	gpio_set_slew_rate(GPIO_CLK, GPIO_SLEW_RATE_FAST);
 	gpio_set_slew_rate(GPIO_SDA, GPIO_SLEW_RATE_FAST);
+	
+	gpio_pull_up(GPIO_UP);
+	gpio_pull_up(GPIO_DOWN);
+	gpio_pull_up(GPIO_LEFT);
+	gpio_pull_up(GPIO_RIGHT);
+	gpio_pull_up(GPIO_A);
+	gpio_pull_up(GPIO_B);
+	gpio_pull_up(GPIO_SELECT);
+	gpio_pull_up(GPIO_START);
 
 	/* Set SPI clock to use high frequency. */
 	clock_configure(clk_peri, 0,
@@ -451,11 +495,17 @@ int main(void)
 		audio_callback(NULL, stream, 1098);
 #endif
 
-		/* Required since we do not know whether a button remains
-		 * pressed over a serial connection. */
-		if(frames % 4 == 0)
-			gb.direct.joypad = 0xFF;
+		/* Update buttons state */
+		gb.direct.joypad_bits.up=gpio_get(GPIO_UP);
+		gb.direct.joypad_bits.down=gpio_get(GPIO_DOWN);
+		gb.direct.joypad_bits.left=gpio_get(GPIO_LEFT);
+		gb.direct.joypad_bits.right=gpio_get(GPIO_RIGHT);
+		gb.direct.joypad_bits.a=gpio_get(GPIO_A);
+		gb.direct.joypad_bits.b=gpio_get(GPIO_B);
+		gb.direct.joypad_bits.select=gpio_get(GPIO_SELECT);
+		gb.direct.joypad_bits.start=gpio_get(GPIO_START);
 
+		/* Serial monitor commands */ 
 		input = getchar_timeout_us(0);
 		if(input == PICO_ERROR_TIMEOUT)
 			continue;
