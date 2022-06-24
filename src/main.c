@@ -343,8 +343,8 @@ int main(void)
 	{
 		/* The value for VCO set here is meant for least power
 		 * consumption. */
-		const unsigned vco = 532000000; /* 266MHz/133MHz */
-		const unsigned div1 = 2, div2 = 1;
+		const unsigned vco = 792000000; /* 264MHz/132MHz */
+		const unsigned div1 = 3, div2 = 1;
 
 		vreg_set_voltage(VREG_VOLTAGE_1_15);
 		sleep_ms(2);
